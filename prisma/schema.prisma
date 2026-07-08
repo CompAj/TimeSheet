@@ -1,0 +1,122 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  EMPLOYEE
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+}
+
+enum TimesheetStatus {
+  NOT_STARTED
+  DRAFT
+  IN_PROGRESS
+  READY_TO_SUBMIT
+  SUBMITTED
+  APPROVED
+  NEEDS_REVIEW
+}
+
+enum TimesheetDayStatus {
+  EMPTY
+  INCOMPLETE
+  COMPLETE
+  DAY_OFF
+}
+
+model User {
+  id              String            @id @default(cuid())
+  clerkUserId     String?           @unique
+  email           String            @unique
+  firstName       String?
+  lastName        String?
+  role            Role              @default(EMPLOYEE)
+  managerId       String?
+  manager         User?             @relation("UserManager", fields: [managerId], references: [id], onDelete: SetNull)
+  directReports   User[]            @relation("UserManager")
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  sentInvitations Invitation[]      @relation("InvitationsSent")
+  weeklySheets    WeeklyTimesheet[]
+
+  @@index([managerId])
+}
+
+model Invitation {
+  id          String           @id @default(cuid())
+  email       String
+  role        Role             @default(EMPLOYEE)
+  managerId   String?
+  invitedById String?
+  invitedBy   User?            @relation("InvitationsSent", fields: [invitedById], references: [id], onDelete: SetNull)
+  status      InvitationStatus @default(PENDING)
+  createdAt   DateTime         @default(now())
+  acceptedAt  DateTime?
+  expiresAt   DateTime?
+
+  @@index([email])
+  @@index([status])
+  @@index([managerId])
+}
+
+model WeeklyTimesheet {
+  id                   String          @id @default(cuid())
+  userId               String
+  user                 User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  weekStartDate        DateTime        @db.Date
+  weekEndDate          DateTime        @db.Date
+  status               TimesheetStatus @default(NOT_STARTED)
+  completionPercentage Int             @default(0)
+  totalWorkedHours     Float           @default(0)
+  totalBreakMinutes    Int             @default(0)
+  regularHours         Float           @default(0)
+  overtimeHours        Float           @default(0)
+  submittedAt          DateTime?
+  approvedAt           DateTime?
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  days                 TimesheetDay[]
+
+  @@unique([userId, weekStartDate])
+  @@index([weekStartDate])
+  @@index([status])
+}
+
+model TimesheetDay {
+  id                String             @id @default(cuid())
+  weeklyTimesheetId String
+  weeklyTimesheet   WeeklyTimesheet    @relation(fields: [weeklyTimesheetId], references: [id], onDelete: Cascade)
+  date              DateTime           @db.Date
+  dayOfWeek         String
+  startTime         String?
+  endTime           String?
+  breakMinutes      Int                @default(0)
+  notes             String?
+  isDayOff          Boolean            @default(false)
+  workedHours       Float              @default(0)
+  status            TimesheetDayStatus @default(EMPTY)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@unique([weeklyTimesheetId, date])
+  @@index([date])
+  @@index([status])
+}
