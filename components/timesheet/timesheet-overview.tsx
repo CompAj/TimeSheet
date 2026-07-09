@@ -20,7 +20,7 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { addDaysUTC, toISODate } from "@/lib/dates"
 import { cn } from "@/lib/utils"
-import { formatHours, statusLabel, type TimesheetStatusValue } from "@/lib/timesheet-calculations"
+import { formatHours, statusLabel, timesheetActionLabel, type TimesheetStatusValue } from "@/lib/timesheet-calculations"
 import type { OverviewRow } from "@/lib/timesheets"
 import { TimesheetStatusBadge } from "./timesheet-status-badge"
 
@@ -57,7 +57,7 @@ export function TimesheetOverview({
       const matchesSearch =
         !query ||
         row.employeeName.toLowerCase().includes(query) ||
-        row.email.toLowerCase().includes(query) ||
+        row.email?.toLowerCase().includes(query) ||
         row.role.toLowerCase().includes(query)
       const matchesRole = role === "all" || row.role === role
       const matchesStatus = status === "all" || row.status === status
@@ -215,7 +215,11 @@ export function TimesheetOverview({
                     <p className="truncate font-medium">{row.employeeName}</p>
                     <RoleBadge role={row.role} />
                   </div>
-                  <p className="truncate text-xs text-muted-foreground">{row.email}</p>
+                  {row.email ? (
+                    <p className="truncate text-xs text-muted-foreground">{row.email}</p>
+                  ) : (
+                    <p className="truncate text-xs text-muted-foreground italic">No email yet</p>
+                  )}
                 </div>
               </div>
               <TimesheetStatusBadge status={row.status} />
@@ -235,7 +239,7 @@ export function TimesheetOverview({
                 <p>Edited {row.lastEdited}</p>
               </div>
               <Button size="sm" onClick={() => router.push(`/timesheets/${row.userId}?week=${weekStartDate}`)}>
-                {row.canEdit ? "Open" : "View"}
+                {timesheetActionLabel(row.canEdit, row.canManage, row.status)}
                 <ChevronRight className="size-4" />
               </Button>
             </div>
@@ -262,7 +266,7 @@ function OverviewTableRow({ row, onOpen }: { row: OverviewRow; onOpen: () => voi
               <p className="truncate font-medium">{row.employeeName}</p>
               <RoleBadge role={row.role} />
             </div>
-            <p className="truncate text-xs text-muted-foreground">{row.email}</p>
+            <p className="truncate text-xs text-muted-foreground">{row.email ?? "No email yet"}</p>
           </div>
         </div>
       </td>
@@ -298,7 +302,7 @@ function OverviewTableRow({ row, onOpen }: { row: OverviewRow; onOpen: () => voi
       </td>
       <td className="px-3 py-2.5 text-right">
         <Button size="sm" className="w-full max-w-28" onClick={onOpen}>
-          {row.canEdit ? "Open Draft" : "View"}
+          {timesheetActionLabel(row.canEdit, row.canManage, row.status)}
         </Button>
       </td>
     </tr>

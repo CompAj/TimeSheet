@@ -55,13 +55,13 @@ export function canEditTimesheet(
 
   const isLocked = sheetStatus === "SUBMITTED" || sheetStatus === "APPROVED"
 
-  if (isAdmin(actor.role)) return true
+  if (isAdmin(actor.role)) return !isLocked
 
   if (isManager(actor.role)) {
     if (actor.id === target.id) {
       return !isLocked
     }
-    return isEmployee(target.role)
+    return isEmployee(target.role) && !isLocked
   }
 
   return false

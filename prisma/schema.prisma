@@ -45,11 +45,12 @@ enum TimesheetDayStatus {
 model User {
   id              String            @id @default(cuid())
   clerkUserId     String?           @unique
-  email           String            @unique
+  email           String?           @unique
   firstName       String?
   lastName        String?
   role            Role              @default(EMPLOYEE)
   managerId       String?
+  hideSelfFromTimesheetOverview Boolean @default(false)
   manager         User?             @relation("UserManager", fields: [managerId], references: [id], onDelete: SetNull)
   directReports   User[]            @relation("UserManager")
   createdAt       DateTime          @default(now())

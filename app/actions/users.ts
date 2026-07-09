@@ -26,7 +26,7 @@ export type ManagerOption = {
 
 export type WorkspaceUserRow = {
   id: string
-  email: string
+  email: string | null
   firstName: string | null
   lastName: string | null
   role: AppRole
@@ -36,6 +36,7 @@ export type WorkspaceUserRow = {
   canManage: boolean
   canEditRole: boolean
   canEditManager: boolean
+  canEditEmail: boolean
   canDelete: boolean
 }
 
@@ -50,16 +51,18 @@ export async function createUserAction(
     return { ok: false, error: "Only admins and managers can create users." }
   }
 
-  const email = String(formData.get("email") ?? "")
-    .trim()
-    .toLowerCase()
+  const email = parseOptionalEmail(formData.get("email"))
   const firstName = String(formData.get("firstName") ?? "").trim() || null
   const lastName = String(formData.get("lastName") ?? "").trim() || null
   const role = String(formData.get("role") ?? "EMPLOYEE") as AppRole
   const managerId = parseOptionalId(formData.get("managerId"))
 
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+  if (email === false) {
     return { ok: false, error: "Enter a valid email address." }
+  }
+
+  if (!email && !firstName && !lastName) {
+    return { ok: false, error: "Enter at least a first name, last name, or email." }
   }
 
   if (!ROLES.includes(role)) {
@@ -73,54 +76,48 @@ export async function createUserAction(
   try {
     const resolvedManagerId = await resolveManagerId(role, managerId)
 
-    await prisma.user.upsert({
-      where: { email },
-      update: {
-        firstName,
-        lastName,
-        role,
-        managerId: resolvedManagerId,
-      },
-      create: {
-        email,
-        firstName,
-        lastName,
-        role,
-        managerId: resolvedManagerId,
-      },
-    })
-
-    const expiresAt = addDaysUTC(new Date(), 14)
-    const existingPending = await prisma.invitation.findFirst({
-      where: { email, status: "PENDING" },
-      orderBy: { createdAt: "desc" },
-    })
-
-    if (existingPending) {
-      await prisma.invitation.update({
-        where: { id: existingPending.id },
-        data: {
+    if (email) {
+      await prisma.user.upsert({
+        where: { email },
+        update: {
+          firstName,
+          lastName,
           role,
           managerId: resolvedManagerId,
-          invitedById: currentUser.id,
-          expiresAt,
+        },
+        create: {
+          email,
+          firstName,
+          lastName,
+          role,
+          managerId: resolvedManagerId,
         },
       })
+
+      await ensureInvitation({
+        email,
+        role,
+        managerId: resolvedManagerId,
+        invitedById: currentUser.id,
+      })
     } else {
-      await prisma.invitation.create({
+      await prisma.user.create({
         data: {
-          email,
+          firstName,
+          lastName,
           role,
           managerId: resolvedManagerId,
-          invitedById: currentUser.id,
-          status: "PENDING",
-          expiresAt,
         },
       })
     }
 
     revalidateUserPaths()
-    return { ok: true, message: `User created and invitation ready for ${email}.` }
+    return {
+      ok: true,
+      message: email
+        ? `User created and invitation ready for ${email}.`
+        : "User created without email. Add an email later so they can sign in and view their timesheet.",
+    }
   } catch (error) {
     return { ok: false, error: getErrorMessage(error) }
   }
@@ -142,7 +139,7 @@ export async function updateUserAction(formData: FormData): Promise<UserActionSt
 
   const target = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, role: true, email: true },
+    select: { id: true, role: true, email: true, clerkUserId: true, firstName: true, lastName: true },
   })
 
   if (!target) {
@@ -165,17 +162,46 @@ export async function updateUserAction(formData: FormData): Promise<UserActionSt
 
   try {
     const resolvedManagerId = await resolveManagerId(nextRole, managerId, userId)
+    const nextEmail = formData.has("email") ? parseOptionalEmail(formData.get("email")) : undefined
+
+    if (nextEmail === false) {
+      return { ok: false, error: "Enter a valid email address." }
+    }
+
+    if (nextEmail === null && target.clerkUserId) {
+      return { ok: false, error: "Email cannot be removed after the user has signed in." }
+    }
+
+    if (nextEmail && nextEmail !== target.email) {
+      const existing = await prisma.user.findUnique({
+        where: { email: nextEmail },
+        select: { id: true },
+      })
+      if (existing && existing.id !== userId) {
+        return { ok: false, error: "That email is already assigned to another user." }
+      }
+    }
 
     await prisma.user.update({
       where: { id: userId },
       data: {
         role: nextRole,
         managerId: resolvedManagerId,
+        ...(nextEmail !== undefined ? { email: nextEmail } : {}),
       },
     })
 
+    if (nextEmail && nextEmail !== target.email) {
+      await ensureInvitation({
+        email: nextEmail,
+        role: nextRole,
+        managerId: resolvedManagerId,
+        invitedById: currentUser.id,
+      })
+    }
+
     revalidateUserPaths()
-    return { ok: true, message: `Updated ${target.email}.` }
+    return { ok: true, message: `Updated ${formatUserLabel(target, nextEmail ?? target.email)}.` }
   } catch (error) {
     return { ok: false, error: getErrorMessage(error) }
   }
@@ -201,6 +227,7 @@ export async function getWorkspaceUsers(currentUserId: string, currentUserRole: 
     canManage: canManageUsers(actor, user),
     canEditRole: isAdmin(currentUserRole) && user.id !== currentUserId,
     canEditManager: canManageUsers(actor, user) && user.role === "EMPLOYEE",
+    canEditEmail: canManageUsers(actor, user) && !user.clerkUserId,
     canDelete: canDeleteUser(actor, user),
   }))
 }
@@ -222,7 +249,7 @@ export async function deleteUserAction(formData: FormData): Promise<UserActionSt
 
   const target = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, email: true, role: true },
+    select: { id: true, email: true, role: true, firstName: true, lastName: true },
   })
 
   if (!target) {
@@ -241,18 +268,20 @@ export async function deleteUserAction(formData: FormData): Promise<UserActionSt
   }
 
   try {
-    await prisma.$transaction([
-      prisma.invitation.updateMany({
-        where: { email: target.email, status: "PENDING" },
-        data: { status: "REVOKED" },
-      }),
-      prisma.user.delete({
+    await prisma.$transaction(async (tx) => {
+      if (target.email) {
+        await tx.invitation.updateMany({
+          where: { email: target.email, status: "PENDING" },
+          data: { status: "REVOKED" },
+        })
+      }
+      await tx.user.delete({
         where: { id: userId },
-      }),
-    ])
+      })
+    })
 
     revalidateUserPaths()
-    return { ok: true, message: `Deleted ${target.email}.` }
+    return { ok: true, message: `Deleted ${formatUserLabel(target, target.email)}.` }
   } catch (error) {
     return { ok: false, error: getErrorMessage(error) }
   }
@@ -300,9 +329,66 @@ async function resolveManagerId(role: AppRole, managerId: string | null, userId?
   return manager.id
 }
 
-function formatUserName(user: { firstName: string | null; lastName: string | null; email: string }) {
+function parseOptionalEmail(value: FormDataEntryValue | null): string | null | false | undefined {
+  if (value === null) return undefined
+  const email = String(value).trim().toLowerCase()
+  if (!email) return null
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return false
+  return email
+}
+
+async function ensureInvitation({
+  email,
+  role,
+  managerId,
+  invitedById,
+}: {
+  email: string
+  role: AppRole
+  managerId: string | null
+  invitedById: string
+}) {
+  const expiresAt = addDaysUTC(new Date(), 14)
+  const existingPending = await prisma.invitation.findFirst({
+    where: { email, status: "PENDING" },
+    orderBy: { createdAt: "desc" },
+  })
+
+  if (existingPending) {
+    await prisma.invitation.update({
+      where: { id: existingPending.id },
+      data: {
+        role,
+        managerId,
+        invitedById,
+        expiresAt,
+      },
+    })
+    return
+  }
+
+  await prisma.invitation.create({
+    data: {
+      email,
+      role,
+      managerId,
+      invitedById,
+      status: "PENDING",
+      expiresAt,
+    },
+  })
+}
+
+function formatUserName(user: { firstName: string | null; lastName: string | null; email: string | null }) {
   const name = [user.firstName, user.lastName].filter(Boolean).join(" ").trim()
-  return name || user.email
+  return name || user.email || "Unknown user"
+}
+
+function formatUserLabel(
+  user: { firstName: string | null; lastName: string | null; email: string | null },
+  email: string | null,
+) {
+  return formatUserName({ ...user, email: email ?? user.email })
 }
 
 function revalidateUserPaths() {

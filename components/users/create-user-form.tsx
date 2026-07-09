@@ -43,8 +43,8 @@ export function CreateUserForm({
     <form action={action} className="rounded-lg border bg-card p-4">
       <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-[1fr_1fr_1fr_12rem_12rem_auto] xl:items-end">
         <div className="grid gap-1.5">
-          <Label htmlFor="create-email">Email</Label>
-          <Input id="create-email" name="email" type="email" placeholder="employee@example.com" required />
+          <Label htmlFor="create-email">Email (optional)</Label>
+          <Input id="create-email" name="email" type="email" placeholder="Add later to invite them to sign in" />
         </div>
         <div className="grid gap-1.5">
           <Label htmlFor="create-first-name">First name</Label>

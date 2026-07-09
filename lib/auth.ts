@@ -12,7 +12,7 @@ export { isManagerRole } from "@/lib/permissions"
 
 export function displayName(user: Pick<AppUser, "firstName" | "lastName" | "email">) {
   const name = [user.firstName, user.lastName].filter(Boolean).join(" ").trim()
-  return name || user.email
+  return name || user.email || "Unknown user"
 }
 
 export async function requireAppUser(): Promise<AppUser> {

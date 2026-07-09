@@ -1,9 +1,10 @@
 import { AppShell } from "@/components/app-shell"
 import { RevokeInvitationButton } from "@/components/invitations/revoke-invitation-button"
+import { TimesheetOverviewPreference } from "@/components/settings/timesheet-overview-preference"
 import { CreateUserForm } from "@/components/users/create-user-form"
 import { UsersTable } from "@/components/users/users-table"
 import { getManagerOptions, getWorkspaceUsers } from "@/app/actions/users"
-import { displayName, requireManagerUser } from "@/lib/auth"
+import { displayName, isManagerRole, requireManagerUser } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 
 export const dynamic = "force-dynamic"
@@ -30,7 +31,13 @@ export default async function UsersPage() {
           </p>
         </header>
 
-        <CreateUserForm actorRole={user.role} managerOptions={managerOptions} />
+        {isManagerRole(user.role) && (
+          <TimesheetOverviewPreference hideSelf={user.hideSelfFromTimesheetOverview} />
+        )}
+
+        <section className={isManagerRole(user.role) ? "mt-8" : undefined}>
+          <CreateUserForm actorRole={user.role} managerOptions={managerOptions} />
+        </section>
 
         <section className="mt-8">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Workspace users</h2>

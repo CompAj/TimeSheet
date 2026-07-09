@@ -14,7 +14,7 @@ import {
 export type OverviewRow = {
   userId: string
   employeeName: string
-  email: string
+  email: string | null
   role: string
   managerName: string | null
   status: TimesheetStatusValue
@@ -26,6 +26,7 @@ export type OverviewRow = {
   overtimeHours: number
   lastEdited: string
   canEdit: boolean
+  canManage: boolean
 }
 
 export type TimesheetEditorDay = {
@@ -45,7 +46,7 @@ export type TimesheetEditorData = {
   id: string
   userId: string
   employeeName: string
-  email: string
+  email: string | null
   role: string
   weekStartDate: string
   weekEndDate: string
@@ -79,7 +80,12 @@ export async function getTimesheetOverview(weekStart: Date, currentUser: AppUser
     },
   })
 
-  return users.map((user) => {
+  const visibleUsers =
+    currentUser.hideSelfFromTimesheetOverview
+      ? users.filter((user) => user.id !== currentUser.id)
+      : users
+
+  return visibleUsers.map((user) => {
     const sheet = user.weeklySheets[0]
     const sheetStatus = (sheet?.status ?? "NOT_STARTED") as TimesheetStatusValue
     const base = {
@@ -89,6 +95,7 @@ export async function getTimesheetOverview(weekStart: Date, currentUser: AppUser
       role: user.role,
       managerName: user.manager ? displayName(user.manager) : null,
       canEdit: canEditTimesheet(currentUser, user, sheetStatus),
+      canManage: canApproveTimesheet(currentUser, user),
     }
 
     if (!sheet) {

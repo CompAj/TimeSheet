@@ -8,6 +8,7 @@ import { deleteUserAction, updateUserAction, type ManagerOption, type WorkspaceU
 import { useToast } from "@/components/providers/toast-provider"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { Input } from "@/components/ui/input"
 
 const selectClassName =
   "h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
@@ -61,7 +62,7 @@ function UserRow({
   const toast = useToast()
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
-  const name = [user.firstName, user.lastName].filter(Boolean).join(" ").trim() || user.email
+  const name = [user.firstName, user.lastName].filter(Boolean).join(" ").trim() || user.email || "Unknown user"
 
   function deleteUser() {
     startTransition(async () => {
@@ -82,10 +83,10 @@ function UserRow({
     return (
       <tr className="border-b last:border-0">
         <td className="px-4 py-3 font-medium">{name}</td>
-        <td className="px-4 py-3 text-muted-foreground">{user.email}</td>
+        <td className="px-4 py-3 text-muted-foreground">{user.email ?? "—"}</td>
         <td className="px-4 py-3">{user.role}</td>
         <td className="px-4 py-3 text-muted-foreground">{user.managerName ?? "—"}</td>
-        <td className="px-4 py-3">{user.clerkLinked ? "Linked" : "Pending"}</td>
+        <td className="px-4 py-3">{user.clerkLinked ? "Linked" : user.email ? "Pending" : "No email"}</td>
         <td className="px-4 py-3 text-right text-xs text-muted-foreground">View only</td>
       </tr>
     )
@@ -94,7 +95,20 @@ function UserRow({
   return (
     <tr className="border-b last:border-0 align-top">
       <td className="px-4 py-3 font-medium">{name}</td>
-      <td className="px-4 py-3 text-muted-foreground">{user.email}</td>
+      <td className="px-4 py-3">
+        {user.canEditEmail ? (
+          <Input
+            name="email"
+            form={`edit-user-${user.id}`}
+            type="email"
+            defaultValue={user.email ?? ""}
+            placeholder="Add email to invite"
+            className="min-w-48"
+          />
+        ) : (
+          <span className="text-muted-foreground">{user.email ?? "—"}</span>
+        )}
+      </td>
       <td className="px-4 py-3">
         {user.canEditRole ? (
           <select name="role" form={`edit-user-${user.id}`} defaultValue={user.role} className={selectClassName}>
@@ -127,7 +141,7 @@ function UserRow({
           <span className="text-muted-foreground">{user.managerName ?? "—"}</span>
         )}
       </td>
-      <td className="px-4 py-3">{user.clerkLinked ? "Linked" : "Pending"}</td>
+      <td className="px-4 py-3">{user.clerkLinked ? "Linked" : user.email ? "Pending" : "No email"}</td>
       <td className="px-4 py-3 text-right">
         <div className="flex justify-end gap-2">
           <form
@@ -167,7 +181,7 @@ function UserRow({
                 open={deleteOpen}
                 onOpenChange={setDeleteOpen}
                 title="Delete user?"
-                description={`This will permanently remove ${name} (${user.email}) and all of their timesheets from the workspace. This action cannot be undone.`}
+                description={`This will permanently remove ${name}${user.email ? ` (${user.email})` : ""} and all of their timesheets from the workspace. This action cannot be undone.`}
                 confirmLabel="Delete user"
                 onConfirm={deleteUser}
                 loading={isPending}

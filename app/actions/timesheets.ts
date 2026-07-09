@@ -119,6 +119,10 @@ export async function submitTimesheetAction(timesheetId: string): Promise<Action
       return failure("Approved timesheets cannot be submitted again.")
     }
 
+    if (sheet.status === "SUBMITTED") {
+      return failure("This timesheet has already been submitted.")
+    }
+
     const inputs = sheet.days.map((day) => ({
       id: day.id,
       date: day.date.toISOString().slice(0, 10),

@@ -40,6 +40,9 @@ export default async function DashboardPage() {
             <Link href={`/timesheets?week=${week}`} className={buttonVariants()}>
               Open Timesheets
             </Link>
+            <Link href={`/timesheets/${user.id}?week=${week}`} className={buttonVariants({ variant: "outline" })}>
+              My Timesheet
+            </Link>
             <Link href="/settings/invitations" className={buttonVariants({ variant: "outline" })}>
               Manage Users
             </Link>

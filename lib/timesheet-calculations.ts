@@ -61,6 +61,24 @@ export function statusLabel(status: TimesheetStatusValue) {
     .join(" ")
 }
 
+const DRAFT_STATUSES: TimesheetStatusValue[] = ["NOT_STARTED", "DRAFT", "IN_PROGRESS", "READY_TO_SUBMIT"]
+
+export function isDraftTimesheetStatus(status: TimesheetStatusValue) {
+  return DRAFT_STATUSES.includes(status)
+}
+
+export function timesheetActionLabel(
+  canEdit: boolean,
+  canManage: boolean,
+  status: TimesheetStatusValue,
+) {
+  if (canEdit) {
+    return isDraftTimesheetStatus(status) ? "Open Draft" : "Edit"
+  }
+  if (canManage && status === "SUBMITTED") return "Edit"
+  return "View"
+}
+
 export function dayStatusLabel(status: TimesheetDayStatusValue) {
   return status
     .toLowerCase()

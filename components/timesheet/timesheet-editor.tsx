@@ -61,6 +61,8 @@ export function TimesheetEditor({
   }, [days, timesheet.status])
 
   const canSubmit = calculated.completedDays === 7 && timesheet.status !== "SUBMITTED" && timesheet.status !== "APPROVED"
+  const isLocked = !timesheet.canEdit
+  const showManagerActions = timesheet.canManage && timesheet.status === "SUBMITTED"
 
   function updateDay(id: string, patch: Partial<TimesheetEditorDay>) {
     setDays((current) => current.map((day) => (day.id === id ? { ...day, ...patch } : day)))
@@ -119,10 +121,20 @@ export function TimesheetEditor({
   }
 
   function submitTimesheet() {
-    runAction(async () => {
+    startTransition(async () => {
       const saved = await saveTimesheetDraftAction({ timesheetId: timesheet.id, days })
-      if (!saved.ok) return saved
-      return submitTimesheetAction(timesheet.id)
+      if (!saved.ok) {
+        toast.error(saved.error ?? "Something went wrong.")
+        return
+      }
+
+      const result = await submitTimesheetAction(timesheet.id)
+      if (result.ok) {
+        toast.success(result.message ?? "Timesheet submitted.")
+        router.push(overviewHref)
+      } else {
+        toast.error(result.error ?? "Something went wrong.")
+      }
     })
   }
 
@@ -155,8 +167,14 @@ export function TimesheetEditor({
               <TimesheetStatusBadge status={timesheet.status} />
             </div>
             <p className="mt-1 text-sm text-muted-foreground">
-              {timesheet.email} - {timesheet.role}
+              {[timesheet.email, timesheet.role].filter(Boolean).join(" · ")}
             </p>
+            {timesheet.submittedAt && (timesheet.status === "SUBMITTED" || timesheet.status === "APPROVED") && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Submitted {formatTimestamp(timesheet.submittedAt)}
+                {timesheet.approvedAt ? ` · Approved ${formatTimestamp(timesheet.approvedAt)}` : ""}
+              </p>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" size="icon" onClick={() => shiftWeek(-7)} aria-label="Previous week">
@@ -193,27 +211,29 @@ export function TimesheetEditor({
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={copyMondayToWeekdays} disabled={!timesheet.canEdit || isPending}>
-              <Copy className="size-4" />
-              Copy Monday
-            </Button>
-            <Button variant="outline" onClick={resetWeek} disabled={!timesheet.canEdit || isPending}>
-              <RotateCcw className="size-4" />
-              Reset
-            </Button>
-            <Button variant="outline" onClick={saveDraft} disabled={!timesheet.canEdit || isPending}>
-              <Save className="size-4" />
-              Save Draft
-            </Button>
-            <Button onClick={submitTimesheet} disabled={!timesheet.canEdit || !canSubmit || isPending}>
-              <Send className="size-4" />
-              Submit
-            </Button>
-          </div>
+          {timesheet.canEdit ? (
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={copyMondayToWeekdays} disabled={isPending}>
+                <Copy className="size-4" />
+                Copy Monday
+              </Button>
+              <Button variant="outline" onClick={resetWeek} disabled={isPending}>
+                <RotateCcw className="size-4" />
+                Reset
+              </Button>
+              <Button variant="outline" onClick={saveDraft} disabled={isPending}>
+                <Save className="size-4" />
+                Save Draft
+              </Button>
+              <Button onClick={submitTimesheet} disabled={!canSubmit || isPending}>
+                <Send className="size-4" />
+                Submit
+              </Button>
+            </div>
+          ) : null}
         </div>
 
-        {timesheet.canManage && (
+        {showManagerActions && (
           <div className="mt-4 flex flex-wrap gap-2 border-t pt-4">
             <Button variant="outline" onClick={approve} disabled={isPending}>
               <ClipboardCheck className="size-4" />
@@ -226,13 +246,15 @@ export function TimesheetEditor({
           </div>
         )}
 
-        {!timesheet.canEdit && (
+        {isLocked && (
           <div className="mt-4 rounded-md border border-warning/25 bg-warning/10 px-3 py-2 text-sm text-warning">
-            {timesheet.role === "EMPLOYEE"
-              ? "This timesheet is view-only. Contact your manager to make changes."
-              : timesheet.status === "SUBMITTED" || timesheet.status === "APPROVED"
-                ? "This timesheet is locked because it has been submitted or approved."
-                : "This timesheet is view-only for your role."}
+            {timesheet.status === "SUBMITTED" && timesheet.canManage
+              ? "This timesheet has been submitted. Approve it below or mark it for review."
+              : timesheet.role === "EMPLOYEE"
+                ? "This timesheet is view-only. Contact your manager to make changes."
+                : timesheet.status === "SUBMITTED" || timesheet.status === "APPROVED"
+                  ? "This timesheet is locked because it has been submitted or approved."
+                  : "This timesheet is view-only for your role."}
           </div>
         )}
       </header>
@@ -459,6 +481,13 @@ function formatDate(value: string) {
     year: "numeric",
     timeZone: "UTC",
   }).format(new Date(`${value}T00:00:00.000Z`))
+}
+
+function formatTimestamp(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value))
 }
 
 function formatMinutes(minutes: number) {

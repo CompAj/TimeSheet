@@ -7,11 +7,12 @@ export type AppRole = "ADMIN" | "MANAGER" | "EMPLOYEE"
 export type AppUser = {
   id: string
   clerkUserId: string | null
-  email: string
+  email: string | null
   firstName: string | null
   lastName: string | null
   role: AppRole
   managerId: string | null
+  hideSelfFromTimesheetOverview: boolean
   createdAt: Date
   updatedAt: Date
 }
@@ -61,7 +62,7 @@ export async function syncClerkUserToAppUser(
     return { ok: false, reason: "not-invited" }
   }
 
-  if (existingByClerk && existingByClerk.email !== email) {
+  if (existingByClerk && existingByClerk.email && existingByClerk.email !== email) {
     if (existingEmailOwner && existingEmailOwner.id !== existingByClerk.id) {
       return { ok: false, reason: "email-linked" }
     }
