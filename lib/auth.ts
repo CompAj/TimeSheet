@@ -16,10 +16,7 @@ export function displayName(user: Pick<AppUser, "firstName" | "lastName" | "emai
 }
 
 export async function requireAppUser(): Promise<AppUser> {
-  const session = await auth()
-  if (!session.userId) {
-    session.redirectToSignIn()
-  }
+  const session = await auth.protect()
   const clerkUserId = session.userId
   if (!clerkUserId) {
     redirect("/sign-in")
