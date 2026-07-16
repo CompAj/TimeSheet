@@ -38,12 +38,12 @@ const STATUS_ORDER: TimesheetStatusValue[] = [
 
 export function TimesheetOverview({
   rows,
-  weekStartDate,
-  weekLabel,
+  periodStartDate,
+  periodLabel,
 }: {
   rows: OverviewRow[]
-  weekStartDate: string
-  weekLabel: string
+  periodStartDate: string
+  periodLabel: string
 }) {
   const router = useRouter()
   const [search, setSearch] = useState("")
@@ -88,12 +88,12 @@ export function TimesheetOverview({
     )
   }, [rows])
 
-  function goToWeek(date: string) {
-    router.push(`/timesheets?week=${date}`)
+  function goToPeriod(date: string) {
+    router.push(`/timesheets?period=${date}`)
   }
 
-  function shiftWeek(deltaDays: number) {
-    goToWeek(toISODate(addDaysUTC(new Date(`${weekStartDate}T00:00:00.000Z`), deltaDays)))
+  function shiftPeriod(deltaDays: number) {
+    goToPeriod(toISODate(addDaysUTC(new Date(`${periodStartDate}T00:00:00.000Z`), deltaDays)))
   }
 
   return (
@@ -102,26 +102,26 @@ export function TimesheetOverview({
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Employee Timesheet Overview</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Review weekly progress, hours, and submission status.
+            Review two-week payroll progress, hours, overtime, and weekly submission status.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" size="icon" onClick={() => shiftWeek(-7)} aria-label="Previous week">
+          <Button variant="outline" size="icon" onClick={() => shiftPeriod(-14)} aria-label="Previous pay period">
             <ChevronLeft className="size-4" />
           </Button>
           <div className="flex h-9 items-center gap-2 rounded-md border bg-card px-3 text-sm font-medium">
             <CalendarDays className="size-4 text-muted-foreground" />
-            {weekLabel}
+            {periodLabel}
           </div>
-          <Button variant="outline" size="icon" onClick={() => shiftWeek(7)} aria-label="Next week">
+          <Button variant="outline" size="icon" onClick={() => shiftPeriod(14)} aria-label="Next pay period">
             <ChevronRight className="size-4" />
           </Button>
           <Input
             type="date"
-            value={weekStartDate}
-            onChange={(event) => goToWeek(event.target.value)}
+            value={periodStartDate}
+            onChange={(event) => goToPeriod(event.target.value)}
             className="w-40"
-            aria-label="Select week"
+            aria-label="Select a date in the pay period"
           />
         </div>
       </header>
@@ -185,7 +185,7 @@ export function TimesheetOverview({
             <tr className="border-b bg-muted/50 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
               <th className="px-3 py-2.5 font-medium">Team member</th>
               <th className="px-3 py-2.5 font-medium">Status</th>
-              <th className="px-3 py-2.5 font-medium">Week</th>
+              <th className="px-3 py-2.5 font-medium">Pay period</th>
               <th className="px-3 py-2.5 font-medium">Hours</th>
               <th className="px-3 py-2.5 font-medium">Updated</th>
               <th className="px-3 py-2.5 text-right font-medium">Action</th>
@@ -196,7 +196,7 @@ export function TimesheetOverview({
               <OverviewTableRow
                 key={row.userId}
                 row={row}
-                onOpen={() => router.push(`/timesheets/${row.userId}?week=${weekStartDate}`)}
+                onOpen={() => router.push(`/timesheets/${row.userId}?period=${periodStartDate}`)}
               />
             ))}
           </tbody>
@@ -222,7 +222,9 @@ export function TimesheetOverview({
                   )}
                 </div>
               </div>
-              <TimesheetStatusBadge status={row.status} />
+              <div className="grid gap-1 text-right">
+                {row.weeks.map((week, index) => <span key={week.weekStartDate} className="inline-flex items-center justify-end gap-1 text-[10px] text-muted-foreground">W{index + 1}<TimesheetStatusBadge status={week.status} /></span>)}
+              </div>
             </div>
             <div className="mt-3">
               <CompletionBar percent={row.completionPercentage} days={row.completedDays} status={row.status} />
@@ -238,7 +240,7 @@ export function TimesheetOverview({
                 <p className="truncate">{row.managerName ? `Manager: ${row.managerName}` : "No manager assigned"}</p>
                 <p>Edited {row.lastEdited}</p>
               </div>
-              <Button size="sm" onClick={() => router.push(`/timesheets/${row.userId}?week=${weekStartDate}`)}>
+              <Button size="sm" onClick={() => router.push(`/timesheets/${row.userId}?period=${periodStartDate}`)}>
                 {timesheetActionLabel(row.canEdit, row.canManage, row.status)}
                 <ChevronRight className="size-4" />
               </Button>
@@ -271,7 +273,9 @@ function OverviewTableRow({ row, onOpen }: { row: OverviewRow; onOpen: () => voi
         </div>
       </td>
       <td className="px-3 py-2.5">
-        <TimesheetStatusBadge status={row.status} />
+        <div className="flex flex-wrap gap-1">
+          {row.weeks.map((week, index) => <span key={week.weekStartDate} className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">W{index + 1}<TimesheetStatusBadge status={week.status} /></span>)}
+        </div>
         <p className="mt-1 truncate text-[11px] text-muted-foreground" title={row.managerName ?? undefined}>
           {row.managerName ? `Manager: ${row.managerName}` : "No manager"}
         </p>
@@ -394,7 +398,7 @@ function CompletionBar({
     <div className="w-full max-w-44">
       <div className="mb-1 flex items-center justify-between text-xs">
         <span className="font-medium tabular-nums">{percent}%</span>
-        <span className="text-muted-foreground">{days}/7</span>
+        <span className="text-muted-foreground">{days}/14</span>
       </div>
       <div className="h-1.5 overflow-hidden rounded-full bg-muted">
         <div className={cn("h-full rounded-full", barColor)} style={{ width: `${percent}%` }} />
