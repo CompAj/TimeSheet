@@ -5,7 +5,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Timesheet",
-  description: "Invite-only weekly timesheets",
+  description: "Invite-only biweekly payroll timesheets",
 };
 
 export default function RootLayout({

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 
 import { assertCanAccessTimesheet, requireAppUser } from "@/lib/auth"
+import { recalculatePayPeriod } from "@/lib/payroll-recalculation"
 import {
   canApproveTimesheet,
   canEditTimesheet,
@@ -52,14 +53,29 @@ export async function saveTimesheetDraftAction(input: {
       return failure("A weekly timesheet must contain exactly 7 days.")
     }
 
-    const validDayIds = new Set(sheet.days.map((day) => day.id))
-    if (input.days.some((day) => !validDayIds.has(day.id))) {
+    const validDays = new Map(sheet.days.map((day) => [day.id, day]))
+    if (input.days.some((day) => {
+      const stored = validDays.get(day.id)
+      return !stored || stored.date.toISOString().slice(0, 10) !== day.date || stored.dayOfWeek !== day.dayOfWeek
+    })) {
       return failure("One or more days do not belong to this timesheet.")
     }
 
-    const normalized = input.days.map(normalizeDayInput)
+    const sharedHolidays = await prisma.holiday.findMany({
+      where: { date: { gte: sheet.weekStartDate, lte: sheet.weekEndDate } },
+      select: { date: true },
+    })
+    const sharedHolidayDates = new Set(sharedHolidays.map((holiday) => holiday.date.toISOString().slice(0, 10)))
+    const normalized = input.days.map((day) => normalizeDayInput({
+      ...day,
+      isHoliday: day.isDayOff
+        ? false
+        : day.holidayOverride === null
+          ? sharedHolidayDates.has(day.date)
+          : day.holidayOverride,
+    }))
     const rows = calculateRows(normalized)
-    const totals = calculateTotals(normalized, sheet.status as TimesheetStatusValue)
+    const totals = calculateTotals(normalized)
 
     await prisma.$transaction(async (tx) => {
       for (const day of input.days) {
@@ -85,6 +101,8 @@ export async function saveTimesheetDraftAction(input: {
         },
       })
     })
+
+    await recalculatePayPeriod(sheet.userId, sheet.weekStartDate, sheet.id)
 
     revalidateTimesheetPaths(sheet.userId)
     return { ok: true, message: "Draft saved." }
@@ -132,11 +150,12 @@ export async function submitTimesheetAction(timesheetId: string): Promise<Action
       breakMinutes: day.breakMinutes,
       notes: day.notes,
       isDayOff: day.isDayOff,
+      isHoliday: day.isHoliday,
     }))
     const totals = calculateTotals(inputs)
 
     if (totals.completedDays !== 7) {
-      return failure("All 7 days must be complete or marked as day off before submission.")
+      return failure("All 7 days must be complete, marked as day off, or identified as a holiday before submission.")
     }
 
     await prisma.weeklyTimesheet.update({
@@ -152,6 +171,8 @@ export async function submitTimesheetAction(timesheetId: string): Promise<Action
         overtimeHours: totals.overtimeHours,
       },
     })
+
+    await recalculatePayPeriod(sheet.userId, sheet.weekStartDate)
 
     revalidateTimesheetPaths(sheet.userId)
     return { ok: true, message: "Timesheet submitted." }
@@ -188,6 +209,9 @@ export async function approveTimesheetAction(timesheetId: string): Promise<Actio
       },
     })
 
+    const updatedSheet = await prisma.weeklyTimesheet.findUnique({ where: { id: timesheetId }, select: { weekStartDate: true } })
+    if (updatedSheet) await recalculatePayPeriod(sheet.userId, updatedSheet.weekStartDate)
+
     revalidateTimesheetPaths(sheet.userId)
     return { ok: true, message: "Timesheet approved." }
   } catch (error) {
@@ -223,6 +247,9 @@ export async function markNeedsReviewAction(timesheetId: string): Promise<Action
       },
     })
 
+    const updatedSheet = await prisma.weeklyTimesheet.findUnique({ where: { id: timesheetId }, select: { weekStartDate: true } })
+    if (updatedSheet) await recalculatePayPeriod(sheet.userId, updatedSheet.weekStartDate)
+
     revalidateTimesheetPaths(sheet.userId)
     return { ok: true, message: "Timesheet marked for review." }
   } catch (error) {
@@ -252,25 +279,38 @@ export async function resetTimesheetAction(timesheetId: string): Promise<ActionR
       return failure("You do not have permission to reset this timesheet.")
     }
 
+    const holidays = await prisma.holiday.findMany({
+      where: { date: { gte: sheet.weekStartDate, lte: sheet.weekEndDate } },
+      select: { date: true },
+    })
+    const holidayDates = new Set(holidays.map((holiday) => holiday.date.toISOString().slice(0, 10)))
+
     await prisma.$transaction(async (tx) => {
-      await tx.timesheetDay.updateMany({
-        where: { weeklyTimesheetId: sheet.id },
-        data: {
+      for (const day of sheet.days) {
+        const isHoliday = holidayDates.has(day.date.toISOString().slice(0, 10))
+        await tx.timesheetDay.update({
+          where: { id: day.id },
+          data: {
           startTime: null,
           endTime: null,
           breakMinutes: 0,
           notes: null,
           isDayOff: false,
+          isHoliday,
+          holidayOverride: null,
           workedHours: 0,
-          status: "EMPTY",
-        },
-      })
+          status: isHoliday ? "HOLIDAY" : "EMPTY",
+          },
+        })
+      }
+
+      const holidayCount = sheet.days.filter((day) => holidayDates.has(day.date.toISOString().slice(0, 10))).length
 
       await tx.weeklyTimesheet.update({
         where: { id: sheet.id },
         data: {
-          status: "NOT_STARTED",
-          completionPercentage: 0,
+          status: holidayCount ? "DRAFT" : "NOT_STARTED",
+          completionPercentage: Math.round((holidayCount / 7) * 100),
           totalWorkedHours: 0,
           totalBreakMinutes: 0,
           regularHours: 0,
@@ -281,12 +321,15 @@ export async function resetTimesheetAction(timesheetId: string): Promise<ActionR
       })
     })
 
+    await recalculatePayPeriod(sheet.userId, sheet.weekStartDate)
+
     revalidateTimesheetPaths(sheet.userId)
     return { ok: true, message: "Week reset." }
   } catch (error) {
     return failure(getErrorMessage(error))
   }
 }
+
 
 function revalidateTimesheetPaths(userId: string) {
   revalidatePath("/dashboard")

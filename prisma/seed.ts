@@ -10,7 +10,7 @@ import {
 
 const prisma = new PrismaClient({ adapter: createPrismaAdapter() })
 
-const weekStart = new Date(Date.UTC(2026, 6, 6))
+const weekStart = new Date(Date.UTC(2026, 6, 5))
 const inviteExpiry = addDaysUTC(new Date(), 30)
 
 type SeedUser = {

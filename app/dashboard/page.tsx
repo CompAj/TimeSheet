@@ -2,9 +2,11 @@ import Link from "next/link"
 import { CalendarClock, CheckCircle2, Clock3, Users } from "lucide-react"
 
 import { AppShell } from "@/components/app-shell"
+import { PayrollSetupRequired } from "@/components/settings/payroll-setup-required"
 import { buttonVariants } from "@/components/ui/button"
 import { requireAppUser, isManagerRole } from "@/lib/auth"
-import { formatWeekRange, startOfWeekUTC, toISODate } from "@/lib/dates"
+import { formatPayPeriodRange, resolvePayPeriodStart, toISODate } from "@/lib/dates"
+import { getPayrollConfiguration } from "@/lib/payroll"
 import { getTimesheetForEditor, getTimesheetOverview } from "@/lib/timesheets"
 import { formatHours } from "@/lib/timesheet-calculations"
 import { cn } from "@/lib/utils"
@@ -13,11 +15,15 @@ export const dynamic = "force-dynamic"
 
 export default async function DashboardPage() {
   const user = await requireAppUser()
-  const weekStart = startOfWeekUTC()
-  const week = toISODate(weekStart)
+  const configuration = await getPayrollConfiguration()
+  if (!configuration.anchorDate) {
+    return <AppShell user={user}><PayrollSetupRequired canConfigure={isManagerRole(user.role)} /></AppShell>
+  }
+  const periodStart = resolvePayPeriodStart(new Date(), configuration.anchorDate)
+  const period = toISODate(periodStart)
 
   if (isManagerRole(user.role)) {
-    const rows = await getTimesheetOverview(weekStart, user)
+    const rows = await getTimesheetOverview(periodStart, user)
     const employees = rows.filter((row) => row.role === "EMPLOYEE")
     const totalHours = rows.reduce((sum, row) => sum + row.totalWorkedHours, 0)
     const ready = employees.filter((row) => row.status === "READY_TO_SUBMIT").length
@@ -28,7 +34,7 @@ export default async function DashboardPage() {
         <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:py-8">
           <header className="mb-6">
             <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-            <p className="mt-1 text-sm text-muted-foreground">{formatWeekRange(weekStart)}</p>
+            <p className="mt-1 text-sm text-muted-foreground">{formatPayPeriodRange(periodStart)}</p>
           </header>
           <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <DashboardCard icon={Users} label="Employees" value={employees.length} />
@@ -37,10 +43,10 @@ export default async function DashboardPage() {
             <DashboardCard icon={Clock3} label="Total hours" value={formatHours(totalHours)} />
           </section>
           <div className="mt-6 flex flex-wrap gap-2">
-            <Link href={`/timesheets?week=${week}`} className={buttonVariants()}>
+            <Link href={`/timesheets?period=${period}`} className={buttonVariants()}>
               Open Timesheets
             </Link>
-            <Link href={`/timesheets/${user.id}?week=${week}`} className={buttonVariants({ variant: "outline" })}>
+            <Link href={`/timesheets/${user.id}?period=${period}`} className={buttonVariants({ variant: "outline" })}>
               My Timesheet
             </Link>
             <Link href="/settings/invitations" className={buttonVariants({ variant: "outline" })}>
@@ -52,23 +58,23 @@ export default async function DashboardPage() {
     )
   }
 
-  const timesheet = await getTimesheetForEditor(user, user.id, weekStart)
+  const timesheet = await getTimesheetForEditor(user, user.id, periodStart)
 
   return (
     <AppShell user={user}>
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:py-8">
         <header className="mb-6">
           <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{formatWeekRange(weekStart)}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{formatPayPeriodRange(periodStart)}</p>
         </header>
         <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <DashboardCard icon={CalendarClock} label="Status" value={timesheet.status.replaceAll("_", " ")} />
-          <DashboardCard icon={CheckCircle2} label="Completion" value={`${timesheet.completedDays}/7 days`} />
+          <DashboardCard icon={CalendarClock} label="Week statuses" value={timesheet.weeks.map((week) => week.status.replaceAll("_", " ")).join(" / ")} />
+          <DashboardCard icon={CheckCircle2} label="Completion" value={`${timesheet.completedDays}/14 days`} />
           <DashboardCard icon={Clock3} label="Worked" value={formatHours(timesheet.totalWorkedHours)} />
           <DashboardCard icon={Clock3} label="Overtime" value={formatHours(timesheet.overtimeHours)} />
         </section>
         <div className="mt-6">
-          <Link href={`/timesheets/${user.id}?week=${week}`} className={buttonVariants()}>
+          <Link href={`/timesheets/${user.id}?period=${period}`} className={buttonVariants()}>
             View My Timesheet
           </Link>
           <p className="mt-2 text-sm text-muted-foreground">

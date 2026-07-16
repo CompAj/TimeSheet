@@ -1,6 +1,6 @@
 import { DAY_NAMES } from "./dates"
 
-export type TimesheetDayStatusValue = "EMPTY" | "INCOMPLETE" | "COMPLETE" | "DAY_OFF"
+export type TimesheetDayStatusValue = "EMPTY" | "INCOMPLETE" | "COMPLETE" | "DAY_OFF" | "HOLIDAY"
 export type TimesheetStatusValue =
   | "NOT_STARTED"
   | "DRAFT"
@@ -19,6 +19,7 @@ export type TimesheetDayInput = {
   breakMinutes: number
   notes: string | null
   isDayOff: boolean
+  isHoliday?: boolean
 }
 
 export type CalculatedDay = {
@@ -37,7 +38,19 @@ export type CalculatedWeek = {
   overtimeHours: number
 }
 
-export const STANDARD_WEEK_HOURS = 40
+export type CalculatedPayPeriod = {
+  totalWorkedHours: number
+  totalBreakMinutes: number
+  regularHours: number
+  holidayOvertimeHours: number
+  thresholdOvertimeHours: number
+  overtimeHours: number
+  completedDays: number
+  completionPercentage: number
+  weeks: CalculatedWeek[]
+}
+
+export const STANDARD_PAY_PERIOD_HOURS = 80
 
 export function parseTimeToMinutes(value: string | null | undefined) {
   if (!value) return null
@@ -99,6 +112,9 @@ export function calculateDay(day: TimesheetDayInput): CalculatedDay {
 
   const startTime = day.startTime || ""
   const endTime = day.endTime || ""
+  if (day.isHoliday && !startTime && !endTime) {
+    return { workedHours: 0, status: "HOLIDAY" }
+  }
   const touched =
     startTime !== "" ||
     endTime !== "" ||
@@ -127,7 +143,7 @@ export function calculateDay(day: TimesheetDayInput): CalculatedDay {
 
   return {
     workedHours: Math.round(((shiftMinutes - breakMinutes) / 60) * 100) / 100,
-    status: "COMPLETE",
+    status: day.isHoliday ? "HOLIDAY" : "COMPLETE",
   }
 }
 
@@ -152,6 +168,70 @@ export function calculateWeek(
   return summarizeWeek(days, currentStatus, calculate)
 }
 
+export function calculatePayPeriod(
+  weeks: Array<{ days: TimesheetDayInput[]; currentStatus?: TimesheetStatusValue }>,
+  options: { safe?: boolean } = {},
+): CalculatedPayPeriod {
+  const calculate = options.safe ? safeCalculateDay : calculateDay
+  let remainingRegularHours = STANDARD_PAY_PERIOD_HOURS
+  let holidayOvertimeHours = 0
+  let thresholdOvertimeHours = 0
+
+  const calculatedWeeks = weeks.map(({ days, currentStatus }) => {
+    const summary = summarizeWeek(days, currentStatus, calculate)
+    let regularHours = 0
+    let overtimeHours = 0
+
+    for (const day of days) {
+      const calculated = calculate(day)
+      if (calculated.status !== "COMPLETE" && calculated.status !== "HOLIDAY") continue
+
+      if (day.isHoliday) {
+        holidayOvertimeHours += calculated.workedHours
+        overtimeHours += calculated.workedHours
+        continue
+      }
+
+      const regularForDay = Math.min(remainingRegularHours, calculated.workedHours)
+      const overtimeForDay = calculated.workedHours - regularForDay
+      regularHours += regularForDay
+      overtimeHours += overtimeForDay
+      thresholdOvertimeHours += overtimeForDay
+      remainingRegularHours -= regularForDay
+    }
+
+    return {
+      ...summary,
+      regularHours: roundHours(regularHours),
+      overtimeHours: roundHours(overtimeHours),
+    }
+  })
+
+  const totals = calculatedWeeks.reduce(
+    (result, week) => {
+      result.totalWorkedHours += week.totalWorkedHours
+      result.totalBreakMinutes += week.totalBreakMinutes
+      result.regularHours += week.regularHours
+      result.overtimeHours += week.overtimeHours
+      result.completedDays += week.completedDays
+      return result
+    },
+    { totalWorkedHours: 0, totalBreakMinutes: 0, regularHours: 0, overtimeHours: 0, completedDays: 0 },
+  )
+
+  return {
+    totalWorkedHours: roundHours(totals.totalWorkedHours),
+    totalBreakMinutes: totals.totalBreakMinutes,
+    regularHours: roundHours(totals.regularHours),
+    holidayOvertimeHours: roundHours(holidayOvertimeHours),
+    thresholdOvertimeHours: roundHours(thresholdOvertimeHours),
+    overtimeHours: roundHours(totals.overtimeHours),
+    completedDays: totals.completedDays,
+    completionPercentage: Math.round((totals.completedDays / 14) * 100),
+    weeks: calculatedWeeks,
+  }
+}
+
 function summarizeWeek(
   days: TimesheetDayInput[],
   currentStatus: TimesheetStatusValue | undefined,
@@ -164,21 +244,26 @@ function summarizeWeek(
 
   for (const day of days) {
     const calculated = calculate(day)
-    if (calculated.status === "COMPLETE" || calculated.status === "DAY_OFF") {
+    if (calculated.status === "COMPLETE" || calculated.status === "DAY_OFF" || calculated.status === "HOLIDAY") {
       completedDays += 1
     }
     if (calculated.status === "INCOMPLETE") {
       hasIncompleteDay = true
     }
-    if (calculated.status === "COMPLETE") {
+    if (calculated.status === "COMPLETE" || calculated.status === "HOLIDAY") {
       totalWorkedHours += calculated.workedHours
       totalBreakMinutes += day.breakMinutes || 0
     }
   }
 
   totalWorkedHours = Math.round(totalWorkedHours * 100) / 100
-  const regularHours = Math.min(STANDARD_WEEK_HOURS, totalWorkedHours)
-  const overtimeHours = Math.max(0, totalWorkedHours - STANDARD_WEEK_HOURS)
+  const holidayHours = days.reduce((total, day) => {
+    if (!day.isHoliday) return total
+    const calculated = calculate(day)
+    return total + (calculated.status === "HOLIDAY" ? calculated.workedHours : 0)
+  }, 0)
+  const regularHours = totalWorkedHours - holidayHours
+  const overtimeHours = holidayHours
   const completionPercentage = Math.round((completedDays / DAY_NAMES.length) * 100)
 
   let status: TimesheetStatusValue
@@ -198,14 +283,18 @@ function summarizeWeek(
     completedDays,
     totalWorkedHours,
     totalBreakMinutes,
-    regularHours: Math.round(regularHours * 100) / 100,
-    overtimeHours: Math.round(overtimeHours * 100) / 100,
+    regularHours: roundHours(regularHours),
+    overtimeHours: roundHours(overtimeHours),
   }
 }
 
 export function countCompletedDays(days: TimesheetDayInput[]) {
   return days.filter((day) => {
     const calculated = calculateDay(day)
-    return calculated.status === "COMPLETE" || calculated.status === "DAY_OFF"
+    return calculated.status === "COMPLETE" || calculated.status === "DAY_OFF" || calculated.status === "HOLIDAY"
   }).length
+}
+
+function roundHours(hours: number) {
+  return Math.round(hours * 100) / 100
 }

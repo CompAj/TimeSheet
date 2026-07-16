@@ -40,23 +40,43 @@ enum TimesheetDayStatus {
   INCOMPLETE
   COMPLETE
   DAY_OFF
+  HOLIDAY
+}
+
+model WorkspaceSettings {
+  id                    String    @id @default("workspace")
+  payPeriodAnchorDate   DateTime? @db.Date
+  payrollConfiguredAt   DateTime?
+  payrollConfiguredById String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+}
+
+model Holiday {
+  id        String   @id @default(cuid())
+  date      DateTime @unique @db.Date
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([date])
 }
 
 model User {
-  id              String            @id @default(cuid())
-  clerkUserId     String?           @unique
-  email           String?           @unique
-  firstName       String?
-  lastName        String?
-  role            Role              @default(EMPLOYEE)
-  managerId       String?
-  hideSelfFromTimesheetOverview Boolean @default(false)
-  manager         User?             @relation("UserManager", fields: [managerId], references: [id], onDelete: SetNull)
-  directReports   User[]            @relation("UserManager")
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
-  sentInvitations Invitation[]      @relation("InvitationsSent")
-  weeklySheets    WeeklyTimesheet[]
+  id                            String            @id @default(cuid())
+  clerkUserId                   String?           @unique
+  email                         String?           @unique
+  firstName                     String?
+  lastName                      String?
+  role                          Role              @default(EMPLOYEE)
+  managerId                     String?
+  hideSelfFromTimesheetOverview Boolean           @default(false)
+  manager                       User?             @relation("UserManager", fields: [managerId], references: [id], onDelete: SetNull)
+  directReports                 User[]            @relation("UserManager")
+  createdAt                     DateTime          @default(now())
+  updatedAt                     DateTime          @updatedAt
+  sentInvitations               Invitation[]      @relation("InvitationsSent")
+  weeklySheets                  WeeklyTimesheet[]
 
   @@index([managerId])
 }
@@ -112,6 +132,8 @@ model TimesheetDay {
   breakMinutes      Int                @default(0)
   notes             String?
   isDayOff          Boolean            @default(false)
+  isHoliday         Boolean            @default(false)
+  holidayOverride   Boolean?
   workedHours       Float              @default(0)
   status            TimesheetDayStatus @default(EMPTY)
   createdAt         DateTime           @default(now())
