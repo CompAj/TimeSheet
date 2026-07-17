@@ -5,7 +5,11 @@ import { AppShell } from "@/components/app-shell"
 import { buttonVariants } from "@/components/ui/button"
 import { requireAppUser, isManagerRole } from "@/lib/auth"
 import { formatWeekRange, startOfWeekUTC, toISODate } from "@/lib/dates"
-import { getTimesheetForEditor, getTimesheetOverview } from "@/lib/timesheets"
+import {
+  getAllTimeWorkedHours,
+  getTimesheetForEditor,
+  getTimesheetOverview,
+} from "@/lib/timesheets"
 import { formatHours } from "@/lib/timesheet-calculations"
 import { cn } from "@/lib/utils"
 
@@ -17,9 +21,11 @@ export default async function DashboardPage() {
   const week = toISODate(weekStart)
 
   if (isManagerRole(user.role)) {
-    const rows = await getTimesheetOverview(weekStart, user)
+    const [rows, allTimeWorkedHours] = await Promise.all([
+      getTimesheetOverview(weekStart, user),
+      getAllTimeWorkedHours(user),
+    ])
     const employees = rows.filter((row) => row.role === "EMPLOYEE")
-    const totalHours = rows.reduce((sum, row) => sum + row.totalWorkedHours, 0)
     const ready = employees.filter((row) => row.status === "READY_TO_SUBMIT").length
     const submitted = employees.filter((row) => row.status === "SUBMITTED" || row.status === "APPROVED").length
 
@@ -34,7 +40,7 @@ export default async function DashboardPage() {
             <DashboardCard icon={Users} label="Employees" value={employees.length} />
             <DashboardCard icon={CheckCircle2} label="Ready to submit" value={ready} />
             <DashboardCard icon={CalendarClock} label="Submitted" value={submitted} />
-            <DashboardCard icon={Clock3} label="Total hours" value={formatHours(totalHours)} />
+            <DashboardCard icon={Clock3} label="All-time hours" value={formatHours(allTimeWorkedHours)} />
           </section>
           <div className="mt-6 flex flex-wrap gap-2">
             <Link href={`/timesheets?week=${week}`} className={buttonVariants()}>
