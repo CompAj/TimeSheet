@@ -103,6 +103,25 @@ export function TimesheetEditor({ timesheet, overviewHref }: { timesheet: Timesh
     })
   }
 
+  function savePayPeriod() {
+    startTransition(async () => {
+      const editableWeeks = weeks
+        .map((week, index) => ({ week, index }))
+        .filter(({ week }) => week.canEdit)
+
+      for (const { week, index } of editableWeeks) {
+        const result = await saveTimesheetDraftAction({ timesheetId: week.id, days: week.days })
+        if (!result.ok) {
+          toast.error(`Week ${index + 1}: ${result.error ?? "Unable to save this week."}`)
+          return
+        }
+      }
+
+      toast.success(editableWeeks.length === 2 ? "Both weeks saved." : "Draft saved.")
+      router.refresh()
+    })
+  }
+
   function submitWeek(week: TimesheetEditorWeek) {
     startTransition(async () => {
       const saved = await saveTimesheetDraftAction({ timesheetId: week.id, days: week.days })
@@ -131,6 +150,9 @@ export function TimesheetEditor({ timesheet, overviewHref }: { timesheet: Timesh
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <Button disabled={isPending || !weeks.some((week) => week.canEdit)} onClick={savePayPeriod}>
+              <Save className="size-4" />{isPending ? "Saving..." : "Save"}
+            </Button>
             <Button variant="outline" size="icon" onClick={() => shiftPeriod(-14)} aria-label="Previous pay period"><ChevronLeft className="size-4" /></Button>
             <div className="flex h-9 items-center gap-2 rounded-md border bg-background px-3 text-sm font-medium"><CalendarDays className="size-4 text-muted-foreground" />{timesheet.periodLabel}</div>
             <Button variant="outline" size="icon" onClick={() => shiftPeriod(14)} aria-label="Next pay period"><ChevronRight className="size-4" /></Button>
@@ -157,7 +179,6 @@ export function TimesheetEditor({ timesheet, overviewHref }: { timesheet: Timesh
                       {week.canEdit && <>
                         <Button variant="outline" size="sm" disabled={isPending} onClick={() => copyMonday(weekIndex)}><Copy className="size-3.5" />Copy Monday</Button>
                         <Button variant="outline" size="sm" disabled={isPending} onClick={() => runAction(() => resetTimesheetAction(week.id))}><RotateCcw className="size-3.5" />Reset</Button>
-                        <Button variant="outline" size="sm" disabled={isPending} onClick={() => runAction(() => saveTimesheetDraftAction({ timesheetId: week.id, days: week.days }))}><Save className="size-3.5" />Save</Button>
                         <Button size="sm" disabled={isPending || !canSubmit} onClick={() => submitWeek(week)}><Send className="size-3.5" />Submit</Button>
                       </>}
                       {showManagerActions && <>
