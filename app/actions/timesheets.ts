@@ -53,38 +53,38 @@ export async function saveTimesheetDraftAction(input: {
       return failure("A weekly timesheet must contain exactly 7 days.")
     }
 
-    const submittedDaysById = new Map(input.days.map((day) => [day.id, day]))
-    const validDayIds = new Set(sheet.days.map((day) => day.id))
-    if (
-      submittedDaysById.size !== sheet.days.length ||
-      input.days.some((day) => !validDayIds.has(day.id))
-    ) {
+    const validDays = new Map(sheet.days.map((day) => [day.id, day]))
+    if (input.days.some((day) => {
+      const stored = validDays.get(day.id)
+      return !stored || stored.date.toISOString().slice(0, 10) !== day.date || stored.dayOfWeek !== day.dayOfWeek
+    })) {
       return failure("One or more days do not belong to this timesheet.")
     }
 
-    const normalized = sheet.days
-      .toSorted((a, b) => a.date.getTime() - b.date.getTime())
-      .map((savedDay) => {
-        const submittedDay = submittedDaysById.get(savedDay.id)
-        if (!submittedDay) {
-          throw new Error("One or more days are missing from this timesheet.")
-        }
-
-        return normalizeDayInput({
-          ...submittedDay,
-          id: savedDay.id,
-          date: savedDay.date.toISOString().slice(0, 10),
-          dayOfWeek: savedDay.dayOfWeek,
-        })
-      })
+    const sharedHolidays = await prisma.holiday.findMany({
+      where: { date: { gte: sheet.weekStartDate, lte: sheet.weekEndDate } },
+      select: { date: true },
+    })
+    const sharedHolidayDates = new Set(sharedHolidays.map((holiday) => holiday.date.toISOString().slice(0, 10)))
+    const normalized = input.days.map((day) => normalizeDayInput({
+      ...day,
+      isHoliday: day.isDayOff
+        ? false
+        : day.holidayOverride === null
+          ? sharedHolidayDates.has(day.date)
+          : day.holidayOverride,
+    }))
     const rows = calculateRows(normalized)
     const totals = calculateTotals(normalized)
 
     await prisma.$transaction(async (tx) => {
-      for (const [index, day] of normalized.entries()) {
+      for (const day of input.days) {
+        const row = rows.find((candidate) => candidate.date.toISOString().slice(0, 10) === day.date)
+        if (!row) continue
+
         await tx.timesheetDay.update({
           where: { id: day.id },
-          data: rows[index],
+          data: row,
         })
       }
 
