@@ -1,11 +1,11 @@
 export const DAY_NAMES = [
+  "Sunday",
   "Monday",
   "Tuesday",
   "Wednesday",
   "Thursday",
   "Friday",
   "Saturday",
-  "Sunday",
 ] as const
 
 export function dateOnlyUTC(date: Date) {
@@ -21,8 +21,7 @@ export function addDaysUTC(date: Date, days: number) {
 export function startOfWeekUTC(date = new Date()) {
   const base = dateOnlyUTC(date)
   const day = base.getUTCDay()
-  const diff = day === 0 ? -6 : 1 - day
-  return addDaysUTC(base, diff)
+  return addDaysUTC(base, -day)
 }
 
 export function endOfWeekUTC(weekStart: Date) {
@@ -46,6 +45,39 @@ export function parseISODate(value: string | undefined | null) {
 export function parseWeekStart(value: string | undefined | null) {
   const parsed = parseISODate(value)
   return parsed ? startOfWeekUTC(parsed) : startOfWeekUTC()
+}
+
+export function resolvePayPeriodStart(selectedDate: Date, anchorDate: Date) {
+  const selected = dateOnlyUTC(selectedDate)
+  const anchor = dateOnlyUTC(anchorDate)
+  const daysSinceAnchor = Math.floor((selected.getTime() - anchor.getTime()) / 86_400_000)
+  const periodOffset = Math.floor(daysSinceAnchor / 14) * 14
+  return addDaysUTC(anchor, periodOffset)
+}
+
+export function parsePayPeriodSelection(value: string | undefined | null, anchorDate: Date) {
+  return resolvePayPeriodStart(parseISODate(value) ?? new Date(), anchorDate)
+}
+
+export function endOfPayPeriodUTC(periodStart: Date) {
+  return addDaysUTC(periodStart, 13)
+}
+
+export function formatPayPeriodRange(periodStart: Date) {
+  const start = dateOnlyUTC(periodStart)
+  const end = endOfPayPeriodUTC(start)
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  })
+  const endFormatter = new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  })
+  return `${formatter.format(start)} - ${endFormatter.format(end)}`
 }
 
 export function toISODate(date: Date) {

@@ -1,7 +1,9 @@
 import { AppShell } from "@/components/app-shell"
+import { PayrollSetupRequired } from "@/components/settings/payroll-setup-required"
 import { TimesheetEditor } from "@/components/timesheet/timesheet-editor"
 import { isManagerRole, requireAppUser } from "@/lib/auth"
-import { parseWeekStart, toISODate } from "@/lib/dates"
+import { parsePayPeriodSelection, toISODate } from "@/lib/dates"
+import { getPayrollConfiguration } from "@/lib/payroll"
 import { getTimesheetForEditor } from "@/lib/timesheets"
 
 export const dynamic = "force-dynamic"
@@ -11,18 +13,21 @@ export default async function EmployeeTimesheetPage({
   searchParams,
 }: {
   params: Promise<{ userId: string }>
-  searchParams: Promise<{ week?: string }>
+  searchParams: Promise<{ period?: string; week?: string }>
 }) {
   const currentUser = await requireAppUser()
-  const [{ userId }, { week }] = await Promise.all([params, searchParams])
-  const weekStart = parseWeekStart(week)
-  const timesheet = await getTimesheetForEditor(currentUser, userId, weekStart)
-  const overviewHref = isManagerRole(currentUser.role) ? `/timesheets?week=${toISODate(weekStart)}` : "/dashboard"
+  const [{ userId }, { period, week }, configuration] = await Promise.all([params, searchParams, getPayrollConfiguration()])
+  if (!configuration.anchorDate) {
+    return <AppShell user={currentUser}><PayrollSetupRequired canConfigure={isManagerRole(currentUser.role)} /></AppShell>
+  }
+  const periodStart = parsePayPeriodSelection(period ?? week, configuration.anchorDate)
+  const timesheet = await getTimesheetForEditor(currentUser, userId, periodStart)
+  const overviewHref = isManagerRole(currentUser.role) ? `/timesheets?period=${toISODate(periodStart)}` : "/dashboard"
 
   return (
     <AppShell user={currentUser}>
       <TimesheetEditor
-        key={`${timesheet.id}-${timesheet.weekStartDate}-${timesheet.status}-${timesheet.completionPercentage}`}
+        key={`${timesheet.userId}-${timesheet.periodStartDate}-${timesheet.weeks.map((item) => item.status).join("-")}-${timesheet.completionPercentage}`}
         timesheet={timesheet}
         overviewHref={overviewHref}
       />

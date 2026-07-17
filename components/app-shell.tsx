@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { UserButton } from "@clerk/nextjs"
-import { CalendarClock, LayoutDashboard, Users } from "lucide-react"
+import { CalendarClock, CalendarRange, LayoutDashboard, Users } from "lucide-react"
 
 import { displayName, isManagerRole, type AppUser } from "@/lib/auth"
 import { cn } from "@/lib/utils"
@@ -23,6 +23,7 @@ export function AppShell({
     ...(manager
       ? [
           { href: "/settings/invitations", label: "Users", icon: Users },
+          { href: "/settings/payroll", label: "Payroll", icon: CalendarRange },
         ]
       : []),
   ]

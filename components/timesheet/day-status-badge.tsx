@@ -1,4 +1,4 @@
-import { CheckCircle2, Circle, Clock, Moon } from "lucide-react"
+import { CheckCircle2, Circle, Clock, Moon, Sparkles } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { dayStatusLabel, type TimesheetDayStatusValue } from "@/lib/timesheet-calculations"
@@ -11,6 +11,7 @@ const STATUS_CONFIG: Record<
   INCOMPLETE: { variant: "warning", icon: Clock },
   COMPLETE: { variant: "success", icon: CheckCircle2 },
   DAY_OFF: { variant: "outline", icon: Moon },
+  HOLIDAY: { variant: "outline", icon: Sparkles },
 }
 
 export function DayStatusBadge({ status }: { status: TimesheetDayStatusValue }) {
