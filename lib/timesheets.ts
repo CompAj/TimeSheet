@@ -185,6 +185,25 @@ export async function getTimesheetOverview(periodStart: Date, currentUser: AppUs
   })
 }
 
+export async function getAllTimeWorkedHours(currentUser: AppUser) {
+  const result = await prisma.weeklyTimesheet.aggregate({
+    where: {
+      user: {
+        role: { in: ["EMPLOYEE", "MANAGER"] },
+        ...(currentUser.hideSelfFromTimesheetOverview
+          ? { id: { not: currentUser.id } }
+          : {}),
+      },
+    },
+    _sum: {
+      totalWorkedHours: true,
+    },
+  })
+
+  const total = result._sum.totalWorkedHours ?? 0
+  return Math.round(total * 100) / 100
+}
+
 export async function getTimesheetForEditor(
   currentUser: AppUser,
   targetUserId: string,
